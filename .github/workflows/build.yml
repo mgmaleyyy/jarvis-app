@@ -1,0 +1,69 @@
+name: Build apps
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller + Inno Setup
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller==6.11.1
+          choco install innosetup -y --no-progress
+      - name: Build J.A.R.V.I.S. (pro kamarady)
+        run: pyinstaller --noconfirm --clean --windowed --name JARVIS --icon assets/jarvis.ico --version-file packaging/version_home.txt --add-data "home/ui;ui" --distpath dist_home --workpath build_home home/jarvis.py
+      - name: Build J.A.R.V.I.S. Executive
+        run: pyinstaller --noconfirm --clean --windowed --name JARVIS-Executive --icon assets/jarvis.ico --version-file packaging/version_exec.txt --add-data "exec/ui;ui" --distpath dist_exec --workpath build_exec exec/jarvis.py
+      - name: Installers
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\home.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\exec.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-instalacky
+          path: output/*.exe
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: output/*.exe
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller
+        run: pip install pyinstaller==6.11.1
+      - name: Icon
+        run: |
+          mkdir -p build/AppIcon.iconset
+          for s in 16 32 128 256 512; do sips -z $s $s assets/icon.png --out build/AppIcon.iconset/icon_${s}x${s}.png >/dev/null; d=$((s*2)); sips -z $d $d assets/icon.png --out build/AppIcon.iconset/icon_${s}x${s}@2x.png >/dev/null; done
+          iconutil -c icns build/AppIcon.iconset -o build/AppIcon.icns
+      - name: Build J.A.R.V.I.S. Executive.app
+        run: |
+          cd packaging && pyinstaller --noconfirm --clean --distpath ../dist_mac --workpath ../build_mac mac_exec.spec
+          cd ../dist_mac && ditto -c -k --keepParent "J.A.R.V.I.S. Executive.app" ../JARVIS-Executive-Mac.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mac-aplikace
+          path: JARVIS-Executive-Mac.zip
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: JARVIS-Executive-Mac.zip
