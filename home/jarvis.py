@@ -33,6 +33,9 @@ DEFAULT_CONFIG = {
     "name": "",
     "vocative": "",
     "api_key": "",
+    "groq_key": "",
+    "groq_model": "openai/gpt-oss-120b",
+    "brain": "auto",
     "model": "claude-haiku-5-5",
     "voice": True,
     "voice_name": "",
@@ -1085,6 +1088,104 @@ def claude_turn(text):
 
 
 # =====================================================================
+#  GROQ — mozek zdarma (OpenAI-kompatibilní API, free tier bez karty)
+# =====================================================================
+GHISTORY = []
+GROQ_MODELS = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"]
+
+
+def has_brain():
+    return bool(CFG.get("api_key") or CFG.get("groq_key"))
+
+
+def _groq_tools():
+    return [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
+             "parameters": t.get("input_schema") or {"type": "object", "properties": {}}}} for t in TOOLS if "name" in t]
+
+
+def call_groq(messages, model, with_tools=True):
+    payload = {"model": model, "max_tokens": 1024, "temperature": 0.6,
+               "messages": [{"role": "system", "content": system_prompt()}] + messages}
+    if with_tools:
+        payload["tools"] = _groq_tools(); payload["tool_choice"] = "auto"
+    req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=json.dumps(payload).encode(), headers={
+        "Authorization": "Bearer " + CFG["groq_key"], "Content-Type": "application/json", "User-Agent": "JarvisDesktop/4.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode(errors="ignore")
+        try:
+            msg = json.loads(msg)["error"]["message"]
+        except Exception:
+            pass
+        if e.code == 429:
+            raise RuntimeError("LIMIT")
+        if e.code == 401:
+            raise RuntimeError("Groq klíč nefunguje. Zkontroluj ho v nastavení.")
+        if e.code in (400, 404) and ("model" in msg.lower() and ("not found" in msg.lower() or "decommission" in msg.lower())):
+            raise RuntimeError("MODEL")
+        if e.code == 400 and with_tools and "tool" in msg.lower():
+            raise RuntimeError("TOOLFAIL")
+        raise RuntimeError(f"{e.code}: {msg[:300]}")
+
+
+def groq_turn(text):
+    actions = []
+    GHISTORY.append({"role": "user", "content": text})
+    while len(GHISTORY) > 24:
+        GHISTORY.pop(0)
+        while GHISTORY and GHISTORY[0]["role"] != "user":
+            GHISTORY.pop(0)
+    models = [CFG.get("groq_model") or GROQ_MODELS[0]] + [m for m in GROQ_MODELS if m != CFG.get("groq_model")]
+    mi, tools_on = 0, True
+    try:
+        for _ in range(10):
+            try:
+                resp = call_groq(GHISTORY, models[mi], tools_on)
+            except RuntimeError as e:
+                if str(e) == "MODEL" and mi + 1 < len(models):
+                    mi += 1; continue
+                if str(e) == "TOOLFAIL" and tools_on:
+                    tools_on = False; continue
+                if str(e) == "LIMIT":
+                    GHISTORY.pop() if GHISTORY and GHISTORY[-1]["role"] == "user" else None
+                    return f"Bezplatný mozek si potřebuje chvíli oddechnout, {V()}. Zkuste to za minutu. Základní příkazy fungují dál.", actions
+                raise
+            msg = resp["choices"][0]["message"]
+            calls = msg.get("tool_calls") or []
+            entry = {"role": "assistant", "content": msg.get("content") or ""}
+            if calls:
+                entry["tool_calls"] = calls
+            GHISTORY.append(entry)
+            if not calls:
+                return (msg.get("content") or "").strip() or "Hotovo.", actions
+            for c in calls:
+                name = c["function"]["name"]
+                try:
+                    args = json.loads(c["function"].get("arguments") or "{}") or {}
+                except Exception:
+                    args = {}
+                fn = TOOL_FUNCS.get(name)
+                try:
+                    out = fn(**args) if fn else "Neznámý nástroj."
+                except Exception as e:
+                    out = f"Chyba: {e}"
+                actions.append({"tool": name, "input": args, "result": str(out)[:200]})
+                GHISTORY.append({"role": "tool", "tool_call_id": c["id"], "content": str(out)[:4000]})
+        return "Tohle se mi zacyklilo. Zkusme to jinak.", actions
+    except Exception:
+        GHISTORY.clear()
+        raise
+
+
+def brain_turn(text):
+    if CFG.get("api_key") and (CFG.get("brain") != "groq" or not CFG.get("groq_key")):
+        return claude_turn(text), "claude"
+    return groq_turn(text), "groq"
+
+
+# =====================================================================
 #  LOCAL (offline) PŘÍKAZY — fungují i bez API klíče, okamžitě
 # =====================================================================
 NUM_WORDS = {"jednu": 1, "jedna": 1, "jeden": 1, "dve": 2, "dva": 2, "tri": 3, "ctyri": 4, "pet": 5, "deset": 10, "patnact": 15,
@@ -1503,7 +1604,7 @@ def local_intent(text):
             return weather_sentence(weather(city or None), when), [{"tool": "weather", "result": city or CFG.get("city")}], {"panel": "weather"}
         except Exception:
             pass
-    if m and not CFG.get("api_key"):
+    if m and not has_brain():
         mo = re.search(r"(?i)\b(?:v|ve|na)\s+(.+?)(?:\s+(?:dnes|zítra|zitra|teď|ted))?[?.!]*$", text)
         place = mo.group(1).strip() if (m.group(1) and mo) else ""
         t_web_search(f"počasí {place}".strip(), "google")
@@ -1681,7 +1782,7 @@ def local_intent(text):
         if hit:
             res = t_open_app(target)
             return f"{hit[2] if hit[0] == 'app' else target.capitalize()} běží, {V()}." if res.startswith("Spuštěno") else res, [{"tool": "open_app", "result": res}], {}
-        if not CFG.get("api_key"):
+        if not has_brain():
             return f"Aplikaci „{target}“ na tomhle PC nevidím, {V()}. Seznam najdete v modulu Aplikace.", [], {"panel": "apps"}
         return None
     return None
@@ -1703,11 +1804,10 @@ def handle_chat(text):
     if local:
         reply, actions, ui = local
         source = "local"
-    elif CFG.get("api_key"):
+    elif has_brain():
         try:
-            reply, actions = claude_turn(text)
+            (reply, actions), source = brain_turn(text)
             ui = {}
-            source = "claude"
         except Exception as e:
             reply, actions, ui, source = f"Spojení s mozkem selhalo: {e}", [], {}, "error"
     else:
@@ -1955,9 +2055,11 @@ MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "
 
 
 def public_config():
-    c = {k: v for k, v in CFG.items() if k not in ("api_key", "eleven_key")}
+    c = {k: v for k, v in CFG.items() if k not in ("api_key", "eleven_key", "groq_key")}
     c["has_eleven"] = bool(CFG.get("eleven_key"))
-    c["has_key"] = bool(CFG.get("api_key"))
+    c["has_key"] = has_brain()
+    c["has_claude"] = bool(CFG.get("api_key"))
+    c["has_groq"] = bool(CFG.get("groq_key"))
     c["key_hint"] = ("…" + CFG["api_key"][-4:]) if CFG.get("api_key") else ""
     return c
 
@@ -2099,7 +2201,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, handle_chat(body.get("text", "")))
             if p == "/api/config":
                 for k in DEFAULT_CONFIG:
-                    if k in body and k not in ("api_key", "eleven_key"):
+                    if k in body and k not in ("api_key", "eleven_key", "groq_key"):
                         CFG[k] = body[k]
                 if body.get("api_key") is not None and body.get("api_key") != "":
                     CFG["api_key"] = body["api_key"].strip()
@@ -2109,6 +2211,10 @@ class Handler(BaseHTTPRequestHandler):
                     CFG["eleven_key"] = body["eleven_key_new"].strip()
                 if body.get("clear_eleven"):
                     CFG["eleven_key"] = ""
+                if body.get("groq_key_new"):
+                    CFG["groq_key"] = body["groq_key_new"].strip(); GHISTORY.clear()
+                if body.get("clear_groq"):
+                    CFG["groq_key"] = ""
                 if "autostart" in body:
                     try:
                         set_autostart(bool(body["autostart"]))

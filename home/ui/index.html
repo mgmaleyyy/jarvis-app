@@ -2187,8 +2187,11 @@ function openSettings(){
     <div class="two"><div><label>JMÉNO</label><input class="inp" id="sName" value="${esc(c.name)}"></div><div><label>OSLOVENÍ (5. pád)</label><input class="inp" id="sVoc" value="${esc(c.vocative)}"></div></div>
     <div class="two"><div><label>DOMOVSKÉ MĚSTO (počasí)</label><input class="inp" id="sCity" value="${esc(c.city||"")}" placeholder="např. Praha"></div>
       <div><label>MODEL MOZKU</label>${sel("sModel", c.model, [["claude-haiku-5-5","Haiku 5.5 · rychlý, levný"],["claude-sonnet-5-5","Sonnet 5.5 · chytřejší"],["claude-opus-5-5","Opus 5.5 · nejchytřejší"]])}</div></div>
-    <div><label>ANTHROPIC API KLÍČ ${c.has_key?`· uložen (${esc(c.key_hint)})`:""}</label><input class="inp" id="sKey" type="password" placeholder="${c.has_key?"ponech prázdné = beze změny":"sk-ant-…"}">
-      <div class="hint">Mozek Jarvise. Klíč získáš na console.anthropic.com → API Keys (platí se podle použití). Bez klíče fungují základní příkazy offline.</div></div>
+    <div><label>MOZEK ZDARMA · GROQ KLÍČ ${c.has_groq?"· uložen":""}</label><input class="inp" id="sGroq" type="password" placeholder="${c.has_groq?"ponech prázdné = beze změny":"gsk_…"}">
+      <div class="hint">Účet zdarma na console.groq.com (bez karty) → API Keys → Create API Key. Když dojde denní limit, Jarvis chvíli počká a nic se neplatí.</div>
+      ${c.has_groq?`<button class="btn danger" id="sGclear" style="margin-top:6px">Odebrat Groq klíč</button>`:""}</div>
+    <div><label>ANTHROPIC API KLÍČ (placený, chytřejší) ${c.has_claude?`· uložen (${esc(c.key_hint)})`:""}</label><input class="inp" id="sKey" type="password" placeholder="${c.has_claude?"ponech prázdné = beze změny":"sk-ant-…"}">
+      <div class="hint">Volitelné. Claude z console.anthropic.com (platí se podle použití). Když máš oba klíče, použije se Claude.</div></div>
     <div><label>VZHLED</label><button class="btn" id="sLooks">Otevřít panel Vzhled →</button></div>
     <div style="display:none"><label>BARVA JÁDRA</label><div class="chips" style="margin:0" id="sTheme">${Object.entries(THEMES).map(([k,t])=>`<button class="chip${(c.core_color||"vibra")===k?" on":""}" data-th="${k}" style="display:inline-flex;align-items:center;gap:6px${(c.core_color||"vibra")===k?";background:rgba(255,255,255,.12);color:#fff":""}"><i style="width:9px;height:9px;border-radius:50%;background:${t.accent};box-shadow:0 0 8px ${t.accent}"></i>${t.name}</button>`).join("")}</div></div>
     <div><label>HLASOVÝ ENGINE</label><div class="chips" style="margin:0">
@@ -2210,7 +2213,7 @@ function openSettings(){
       ${tog("allow_shell","PowerShell","Jarvis smí spouštět příkazy – každý musíš potvrdit")}
       ${tog("autostart","Spouštět s Windows","Jarvis naběhne po zapnutí PC")}</div>
     <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap">
-      <div style="display:flex;gap:8px">${c.has_key?`<button class="btn danger" id="sClear">Smazat klíč</button>`:""}<button class="btn" id="sRestart">Restartovat Jarvise</button></div>
+      <div style="display:flex;gap:8px">${c.has_claude?`<button class="btn danger" id="sClear">Smazat Claude klíč</button>`:""}<button class="btn" id="sRestart">Restartovat Jarvise</button></div>
       <div style="display:flex;gap:8px"><button class="btn" id="sTest">Test hlasu</button><button class="btn pri" id="sSave">Uložit</button></div></div>
   </div></div>`;
   openModal("#settings");
@@ -2231,9 +2234,10 @@ function openSettings(){
   $("#sTest").onclick = async () => { const b=collect(); Object.assign(S.config, {voice_name:b.voice_name, voice_rate:b.voice_rate});
     speak(`Dobrý den, ${b.vocative}. Takhle teď zním. Všechny systémy jsou připravené, stačí říct.`, true); };
   $("#sRestart").onclick = () => { toast("Restartuji jádro…"); api("/api/restart",{}).catch(()=>{}); };
+  if ($("#sGclear")) $("#sGclear").onclick = async () => { const r = await api("/api/config",{clear_groq:true}); S.config=r.config; openSettings(); renderGreet(); setMode(mode); };
   if ($("#sClear")) $("#sClear").onclick = async () => { const r = await api("/api/config",{clear_key:true}); S.config=r.config; openSettings(); renderGreet(); setMode(mode); };
   $("#sSave").onclick = async () => {
-    const body = collect(); const k = $("#sKey").value.trim(); if (k) body.api_key = k;
+    const body = collect(); const k = $("#sKey").value.trim(); if (k) body.api_key = k; const gk = $("#sGroq") && $("#sGroq").value.trim(); if (gk) body.groq_key_new = gk;
     const cityChanged = body.city !== S.config.city;
     const r = await api("/api/config", body); S.config = r.config; closeModals(); renderGreet(); setMode("idle"); setupWake();
     if (cityChanged){ WX=null; loadWeather(true); }
