@@ -20,10 +20,12 @@ jobs:
       - name: Install PyInstaller + Inno Setup
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller==6.11.1
+          pip install pyinstaller==6.11.1 pillow
           choco install innosetup -y --no-progress
+      - name: Earth textures (NASA)
+        run: python packaging/fetch_tex.py
       - name: Build J.A.R.V.I.S. (pro kamarady)
-        run: pyinstaller --noconfirm --clean --windowed --name JARVIS --icon assets/jarvis.ico --version-file packaging/version_home.txt --add-data "home/ui;ui" --distpath dist_home --workpath build_home home/jarvis.py
+        run: pyinstaller --noconfirm --clean --windowed --name JARVIS --icon assets/jarvis.ico --version-file packaging/version_home.txt --add-data "home/ui;ui" --add-data "home/tex;tex" --distpath dist_home --workpath build_home home/jarvis.py
       - name: Installers
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\home.iss

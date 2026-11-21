@@ -1283,6 +1283,9 @@ def briefing_text():
 #  EARTH TEXTURES (NASA, public domain) — downloaded once on request
 # =====================================================================
 TEX_DIR = os.path.join(APP_DIR, "tex")
+_TEX_BUNDLED = os.path.join(getattr(sys, "_MEIPASS", HERE), "tex")
+if all(os.path.isfile(os.path.join(_TEX_BUNDLED, k + ".jpg")) for k in ("day", "night", "clouds")):
+    TEX_DIR = _TEX_BUNDLED  # textures shipped inside the installer, no download needed
 CW = "https://commons.wikimedia.org/wiki/Special:FilePath/"
 TEX_SRC = {
     "day": ["https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg",
