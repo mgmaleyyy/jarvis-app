@@ -1181,7 +1181,11 @@ def groq_turn(text):
 
 def brain_turn(text):
     if CFG.get("api_key") and (CFG.get("brain") != "groq" or not CFG.get("groq_key")):
-        return claude_turn(text), "claude"
+        try:
+            return claude_turn(text), "claude"
+        except Exception:
+            if not CFG.get("groq_key"):
+                raise  # bez záložního mozku nahlas chybu
     return groq_turn(text), "groq"
 
 
