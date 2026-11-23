@@ -2190,6 +2190,8 @@ function openSettings(){
     <div><label>MOZEK ZDARMA · GROQ KLÍČ ${c.has_groq?"· uložen":""}</label><input class="inp" id="sGroq" type="password" placeholder="${c.has_groq?"ponech prázdné = beze změny":"gsk_…"}">
       <div class="hint">Účet zdarma na console.groq.com (bez karty) → API Keys → Create API Key. Když dojde denní limit, Jarvis chvíli počká a nic se neplatí.</div>
       ${c.has_groq?`<button class="btn danger" id="sGclear" style="margin-top:6px">Odebrat Groq klíč</button>`:""}</div>
+    ${c.tts_provider!=="eleven"?`<div><label>LIDSKÝ HLAS · ELEVENLABS KLÍČ ${c.has_eleven?"· uložen":""}</label><input class="inp" id="sEleven" type="password" placeholder="${c.has_eleven?"ponech prázdné = beze změny":"sk_…"}">
+      <div class="hint">Volitelné. Účet zdarma na elevenlabs.io (bez karty) → Developers → API Keys → Create API Key (stačí přístup Text to Speech). Po uložení Jarvis rovnou přepne na lidský hlas.</div></div>`:""}
     <div><label>ANTHROPIC API KLÍČ (placený, chytřejší) ${c.has_claude?`· uložen (${esc(c.key_hint)})`:""}</label><input class="inp" id="sKey" type="password" placeholder="${c.has_claude?"ponech prázdné = beze změny":"sk-ant-…"}">
       <div class="hint">Volitelné. Claude z console.anthropic.com (platí se podle použití). Když máš oba klíče, použije se Claude.</div></div>
     <div><label>VZHLED</label><button class="btn" id="sLooks">Otevřít panel Vzhled →</button></div>
@@ -2229,7 +2231,7 @@ function openSettings(){
   const collect = () => { const body = {name:$("#sName").value.trim()||"—", vocative:$("#sVoc").value.trim()||$("#sName").value.trim(), city:$("#sCity").value.trim(),
     model:$("#sModel").value, voice_name:$("#sVoice").value, voice_rate:+$("#sRate").value};
     if ($("#sEvoice")) body.eleven_voice = $("#sEvoice").value;
-    if ($("#sEleven") && $("#sEleven").value.trim()) body.eleven_key_new = $("#sEleven").value.trim();
+    if ($("#sEleven") && $("#sEleven").value.trim()) { body.eleven_key_new = $("#sEleven").value.trim(); body.tts_provider = "eleven"; }
     $("#settings").querySelectorAll(".tog").forEach(t => body[t.dataset.k] = t.classList.contains("on")); return body; };
   $("#sTest").onclick = async () => { const b=collect(); Object.assign(S.config, {voice_name:b.voice_name, voice_rate:b.voice_rate});
     speak(`Dobrý den, ${b.vocative}. Takhle teď zním. Všechny systémy jsou připravené, stačí říct.`, true); };
